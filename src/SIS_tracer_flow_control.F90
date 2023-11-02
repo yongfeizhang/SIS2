@@ -140,7 +140,7 @@ subroutine SIS_tracer_flow_control_init(day, G, IG, param_file, CS, is_restart)
 end subroutine SIS_tracer_flow_control_init
 
 !> Call all registered ice-tracer column physics subroutines
-subroutine SIS_call_tracer_column_fns(dt, G, IG, CS, mi, mi_old)
+subroutine SIS_call_tracer_column_fns(dt, G, IG, CS, mi, mi_old, part_size)
   real,                    intent(in) :: dt  !< The amount of time covered by this call [T ~> s].
   type(SIS_hor_grid_type), intent(in) :: G   !< The horizontal grid type
   type(ice_grid_type),     intent(in) :: IG  !< The sea-ice specific grid type
@@ -154,13 +154,18 @@ subroutine SIS_call_tracer_column_fns(dt, G, IG, CS, mi, mi_old)
                            intent(in) :: mi_old !< Mass of ice in a given category [R Z ~> kg m-2]
                                              !! at the beginning of the timestep
 
+  !YFZ
+  real, dimension(SZI_(G),SZJ_(G),SZCAT_(IG)), &
+                           intent(in) :: part_size
+  !YFZ
+
   ! This subroutine calls all registered ice-tracer column physics subroutines.
 
   if (.not. associated(CS)) call SIS_error(FATAL, "SIS_call_tracer_column_fns: "// &
       "Module must be initialized via call_tracer_register before it is used.")
   ! Add calls to tracer column functions here.
   if (CS%use_ice_age) &
-      call ice_age_tracer_column_physics(dt, G, IG,  CS%ice_age_tracer_CSp, mi, mi_old)
+      call ice_age_tracer_column_physics(dt, G, IG,  CS%ice_age_tracer_CSp, mi, mi_old, part_size)
 
 end subroutine SIS_call_tracer_column_fns
 

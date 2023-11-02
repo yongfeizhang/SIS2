@@ -30,7 +30,7 @@ use SIS_types,     only : ice_state_type, IST_chksum, IST_bounds_check
 use SIS_utils,     only : get_avg, post_avg
 use SIS2_ice_thm,  only : get_SIS2_thermo_coefs, enthalpy_liquid_freeze, Temp_from_En_S
 use ice_grid,      only : ice_grid_type
-
+use SIS_tracer_registry, only : SIS_tracer_registry_type, get_SIS_tracer_pointer !YFZ: added get_SIS_tracer_pointer
 implicit none ; private
 
 #include <SIS2_memory.h>
@@ -55,6 +55,11 @@ type, public :: ice_state_diags_type ; private
   integer :: id_siconc = -1, id_sithick = -1, id_sisnconc = -1, id_sisnthick = -1
   integer :: id_siconc_CMOR = -1, id_sisnconc_CMOR = -1, id_sivol_CMOR = -1
   integer :: id_siu = -1, id_siv = -1, id_sispeed = -1, id_sitimefrac = -1
+  
+  !!YFZ
+  integer :: id_age = -1
+  !!YFZ
+
   !!@}
 end type ice_state_diags_type
 
@@ -89,13 +94,20 @@ subroutine post_ice_state_diagnostics(IDs, IST, OSS, IOF, dt_slow, Time, G, US, 
   real, dimension(SZI_(G),SZJ_(G)) :: diagVar ! A temporary array for diagnostics.
   real, dimension(IG%NkIce) :: S_col ! Specified thermodynamic salinity of each
                                      ! ice layer if spec_thermo_sal is true [S ~> gSalt kg-1]
+  real, dimension(:,:,:,:), &
+    pointer :: ice_age_areal=>NULL() ! Pointer to the ice area age diagnostic array from the SIS tracer registry.
+                        ! in units of time [T ~> yr].
+  real, dimension(SZI_(G),SZJ_(G),IG%CatIce) :: &
+    temp_age   ! A diagnostic array with the sea ice age [T ~> yr].
+
+  
   real :: rho_ice  ! The nominal density of sea ice [R ~> kg m-3].
   real :: rho_snow ! The nominal density of snow [R ~> kg m-3].
   real :: Spec_vol_ice ! The nominal sea ice specific volume [R-1 ~> m3 kg-1]
   real :: I_Nk     ! The inverse of the number of layers in the ice [nondim].
   logical :: spec_thermo_sal
   logical :: do_temp_diags
-  integer :: i, j, k, l, m, isc, iec, jsc, jec, ncat, NkIce
+  integer :: i, j, k, l, m, isc, iec, jsc, jec, ncat, NkIce, nLay
 
   isc = G%isc ; iec = G%iec ; jsc = G%jsc ; jec = G%jec ; ncat = IG%CatIce
   NkIce = IG%NkIce
@@ -124,6 +136,7 @@ subroutine post_ice_state_diagnostics(IDs, IST, OSS, IOF, dt_slow, Time, G, US, 
     if (IDs%id_sisnmass>0) call post_data(IDs%id_sisnmass, mass_snow, diag)
     if (IDs%id_mi>0) call post_data(IDs%id_mi, mass, diag)
     if (IDs%id_sivol_CMOR>0) call post_data(IDs%id_sivol_CMOR, vol_ice, diag)
+
 
     if (IDs%id_mib>0) then
       if (associated(IOF%mass_berg)) then ; do j=jsc,jec ; do i=isc,iec
@@ -192,6 +205,24 @@ subroutine post_ice_state_diagnostics(IDs, IST, OSS, IOF, dt_slow, Time, G, US, 
                                  diag, G=G, scale=US%Z_to_m/Rho_ice, wtd=.true.)
   if (IDs%id_tsn>0) call post_avg(IDs%id_tsn, temp_snow, IST%part_size(:,:,1:), &
                                  diag, G=G, wtd=.true.)
+
+  !!YFZ
+  if (IDs%id_age>0) then
+      call get_SIS_tracer_pointer('ice_age_areal',IST%TrReg, ice_age_areal, nLay)
+      temp_age(:,:,:) = 0.0 
+      do j=jsc,jec ; do k=1,ncat ; do i=isc,iec
+        do m=1,NkIce 
+           temp_age(i,j,k) = temp_age(i,j,k)+ice_age_areal(i,j,k,m)/NkIce
+          ! temp_age(i,j,k) = maxval(ice_age_areal(i,j,k,:))
+           
+        enddo
+      enddo ; enddo; enddo;
+
+      call post_avg(IDs%id_age, temp_age, IST%part_size(:,:,1:), &
+                    diag, G=G,  wtd = .true.)
+  endif
+  !!YFZ
+
   if (IDs%id_sitimefrac>0) then
     diagVar(:,:) = 0.0
     do j=jsc,jec ; do i=isc,iec
@@ -361,6 +392,12 @@ subroutine register_ice_state_diagnostics(Time, IG, US, param_file, diag, IDs)
                'Volume-averaged ice temperature', 'C', conversion=US%C_to_degC, missing_value=missing)
   IDs%id_s_iceav = register_diag_field('ice_model', 'S_bulkice', diag%axesT1, Time, &
                'Volume-averaged ice salinity', 'g/kg', conversion=US%S_to_ppt, missing_value=missing)
+
+  !!YFZ
+  IDs%id_age = register_diag_field('ice_model','AGE', diag%axesT1, Time, &
+               'ice age', 'years', missing_value = missing)
+  !!YFZ
+
   call safe_alloc_ids_1d(IDs%id_t, nLay)
   call safe_alloc_ids_1d(IDs%id_sal, nLay)
   do n=1,nLay

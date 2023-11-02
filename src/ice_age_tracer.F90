@@ -272,7 +272,7 @@ subroutine initialize_ice_age_tracer( day, G, IG, CS, is_restart )
 end subroutine initialize_ice_age_tracer
 
 !> Change the ice age tracers due to ice column physics like melting and freezing
-subroutine ice_age_tracer_column_physics(dt, G, IG, CS,  mi, mi_old)
+subroutine ice_age_tracer_column_physics(dt, G, IG, CS,  mi, mi_old, part_size)
   real,                    intent(in) :: dt  !< The amount of time covered by this call [T ~> s].
   type(SIS_hor_grid_type), intent(in) :: G   !< The horizontal grid type
   type(ice_grid_type),     intent(in) :: IG  !< The sea-ice specific grid type
@@ -284,6 +284,8 @@ subroutine ice_age_tracer_column_physics(dt, G, IG, CS,  mi, mi_old)
   real, dimension(SZI_(G),SZJ_(G),SZCAT_(IG)), &
                            intent(in) :: mi_old  !< Mass of ice in a given category [R Z ~> kg m-2] at the
                                              !! beginning of the timestep
+  real, dimension(SZI_(G),SZJ_(G),SZCAT_(IG)), &
+                           intent(in) :: part_size
 
   ! Local variables
   real :: Isecs_per_year  ! The inverse of the time in a year [T-1 ~> s-1].
@@ -292,6 +294,9 @@ subroutine ice_age_tracer_column_physics(dt, G, IG, CS,  mi, mi_old)
   real :: min_age         ! Minimum age of ice to avoid being set to 0
   real :: mi_min          ! Minimum mass in ice category [kg m-2]
   real :: max_age         ! Maximum age at a grid point
+  !YFZ
+  real :: aice, min_area
+  !YFZ
   real, dimension(SZI_(G),SZJ_(G)) :: vertsum_mi, vertsum_mi_old
   real, dimension(SZI_(G),SZJ_(G),SZCAT_(IG)) :: tr_avg
   integer :: i, j, k, m, tr
@@ -306,6 +311,10 @@ subroutine ice_age_tracer_column_physics(dt, G, IG, CS,  mi, mi_old)
 
   min_age = 0.0
 
+  !YFZ
+  min_area = 0.15
+  !YFZ
+
   year = time_type_to_real(CS%Time) * Isecs_per_year
 
   do tr=1,CS%ntr
@@ -314,10 +323,18 @@ subroutine ice_age_tracer_column_physics(dt, G, IG, CS,  mi, mi_old)
         (year>=CS%tracer_start_year(tr))) then
         do j=jsc,jec ; do i=isc,iec
           if(G%mask2dT(i,j)>0.0) then
+            !YFZ 
+            aice = 0.0 
+            do k=1, IG%CatIce
+               aice = aice+part_size(i,j,k)
+            end do
+            !YFZ
+
             do k=1,IG%CatIce; do m=1,CS%nlevels(tr)
               if(CS%tr(i,j,k,m,tr)<min_age) CS%tr(i,j,k,m,tr) = 0.0
 
-              if(mi(i,j,k) > CS%min_mass) then
+!              if(mi(i,j,k) > CS%min_mass .and. aice > min_area) then
+              if(mi(i,j,k) > CS%min_mass ) then
                 CS%tr(i,j,k,m,tr) = CS%tr(i,j,k,m,tr) + dt_year
               else
                 CS%tr(i,j,k,m,tr) = 0.0
